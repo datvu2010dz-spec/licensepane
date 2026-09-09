@@ -1,0 +1,60 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          mkdir -p build_source
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Không tìm thấy file ZIP project."
+            exit 1
+          fi
+
+          echo "Using: $ZIP_FILE"
+          unzip -q "$ZIP_FILE" -d build_source
+
+      - name: Find Xcode project
+        run: |
+          PROJECT=$(find build_source -name "*.xcodeproj" -type d | head -n 1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "Không tìm thấy Xcode project."
+            find build_source -maxdepth 4 -type f
+            exit 1
+          fi
+
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "Found: $PROJECT"
+
+      - name: Show Xcode information
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project "$PROJECT"
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme LicensePanelApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/LicensePanelApp.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: LicensePanelApp-Archive
+          path: ${{ runner.temp }}/LicensePanelApp.xcarchive
