@@ -1,148 +1,276 @@
 name: Build iOS IPA
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: macos-15
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Find Xcode project
-        id: project
+      - name: Create Xcode project
         shell: bash
         run: |
           set -euo pipefail
-          PROJECT="$(find . -type d -name '*.xcodeproj' -not -path './build/*' | head -n 1 || true)"
-          if [ -z "$PROJECT" ]; then
-            echo "Không tìm thấy .xcodeproj trong repository."
-            find . -maxdepth 4 -type f | sort | head -200
-            exit 1
-          fi
-          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
-          echo "Found: $PROJECT"
+          PAYLOAD="$RUNNER_TEMP/project.zip"
+          mkdir -p "$RUNNER_TEMP/source"
+          cat > "$RUNNER_TEMP/project.b64" <<'BASE64'
+UEsDBBQAAAAIAPIaKV2UPPTMyQIAANwEAAAJAAAAUkVBRE1FLm1kZVRdb9NAEHz3r1ipEi8kDv0A
+BEiI0hIR0TaVQit48+W8cY6e76y7cxLz65m1k7aoD1F83r3dmdlZH9GV0ewi061ybMnMF1m2SMqV
+ynrHtNiaVbqbkR2yxrVyquJAqmnIuNiYwCUtO0prptg2jTU4Rx0Y2WufYp5lR0c0c9q2JZfZmC5V
+eCDVIt8lo1Uy3u3zETxg2ShryiHWRuOq/8s/cIfcbzs072hCpeoiBa6VcZJamthYJRnffc0juvLV
+iMCHFpwSEiIltYwILx5RTgJrH0q5LYkNh5UPYKqZ7mbIvPHgmrgKA6StSWuqVM1x1P9RzbUP3f7Q
+BK85Rgl66ASWY71mlaBSo+R9r8iBqXD5CXKip25DgCq2I+1dAp34gvfHLCumgD2F7tdqN75cjN9+
+OD07eVNk2W/fklaO9Fq5iskkgKZi36if7nnTTC5QGk3uDW/zKMMtnqctkg+c9/L/4K4Ypve1NbYE
+E5rdnmfHOc0bflk432lfMsj/6Qv+khNBLEXXSufZSQ79LetEnW8D4YJluuQNWw+5KbGqqXUlHhem
+6uf4ii5Uo5bGmmQYPjrN6WJgJqIskYwKphQbrQzurYKvqdC+znmnapTP955tBGFByZMYGu3Jb12e
+nT0iAjNzu5ZgUqHilGdvc7oNvmwRHH+m86DXZsN59i6Hk2keKuXMXw4jSO09hnhpYgpm2SYWYr2H
+eNf4kCYRZHq8kI6UPrgMWJ7JIO9bh7a9E0RCQTVgibKRdPz+NaIyi3sOUTx4QnFv5/7Sk7d9VVmO
+5PyWtl5WTZ5hZvu4ymKu4G08eD0CPVmvlYXzhnUrvgCZeAG7XowoeuFgAs1vJvPpVNazRY/Yhg10
+6b0bOAIw9p0ETuAVXqzHWBj4F2aSL4ZFmX07sMKvLzOwhohPsALuPH2BpPqB6yfB0VHpwQlzs0nq
+um5YPGzb8wXMs39QSwMEFAAAAAgA8hopXYR1OnxiAQAACgIAABYAAABHSVRIVUJfQlVJTERfUkVB
+RE1FLm1kTVHLbtswELzrKwboJSEcBnbSHnJTkJeAIBIstAZ6iWhxbW9CkwJJ2fAP5AP6if2SUEpi
+5EbO7uzMzv7Adc9Go6hy7DlucM/xoV8ibyM7G7JsKvG7M05pxA2h8+6F2oi/RYXocHC9/2J46lzg
+6PxBZjOJqo+JwQF7519Xxu2hIhq5Thr98vwLDOdbxVYetqbBydjeqfZVrQnKeFL6ALat6TUFcDyV
+2YVEYSFETTGyXQf8f/uHmlpPMUBZjZ3yrJaGPiqfWwgxgdL6KgNwhqaazp6v8/r212XzDanyul6U
+85sjNi//FHVRPj2n113xeHvkXEqUHQ02PuePWh85clmPWQ7IvLfH7YWQ2U+JxSbx1p7ITuCGGUOo
+PvUN3rXb22PSQjxySzZQpSyZvOvO0lghoHzklWqjzLIn2pFH67ZbjiOnkd101kyGK+04JGcpouGz
+YkNJz6dwQ0iO9HC7Ufnbzd4BUEsDBBQAAAAIAPIaKV359MyEzgAAAO0AAAAPAAAAVVBMT0FEX05P
+VEUudHh0NY5BisIwGIX3PcU7gER0TmBRVGZmM45raWM0GdP8pU0VjzE3ULpzJagIdRmZe+QmEwru
+Hu99PL7YN7WBcYc9nr+uBncXlL65Geyo2Kw07TBWdlKlGHCryJSwvjkqsLWyskq7L6rsZokybJ9p
+Fr1LdzVrVLmmZImV0gIs7/UhyTd3DpZRGrq8oK0qwyW27kAoRE4smiUVNlIhjD+C2+D0d/aPmrch
+gXYn05KdVoPw9rKbCV4IG+ykIIyn35N5vIjn04/h4ms0GH6OWLZk0T9QSwMEFAAAAAgA8hopXYmi
+DvIVBQAAXRYAACkAAABMaWNlbnNlUGFuZWxBcHAueGNvZGVwcm9qL3Byb2plY3QucGJ4cHJvau1X
+W0/bShB+Jr/CjXgoEc39lEo5HMmx1+DWOJHtUHiyHGcJPji25QsQVfz3zq73JHbiTSCl56kIQbKz
+Mzsz38x8u62W8OG4MbGUL43jD7UftSMndu+9R3yN48QLA+Fc6AxqR67vJAlO4NuPF/gaTv/Fbrre
+8tfn1SLdU6u1GsIQz71AGA9vhpnnzxTPx0ICG4hGo1U7OhLFdtVPRwBdzXNxkOCxE2BfjCL4bSZP
+3l0qgEUzzGIXfGm0yFFe4sC/4ikD4Q7+GvgO1ofDA85otAYCiZLnYZdoS2GQ4iC99vDTu7rGMc58
+AhkKZtykltKu5EfhGAfuRuo5Z7cr0tJ0omgznpLlgYCfI99zvZQsW8sIw6anGNRwTJRB5JCTB5Ag
+189mWA3UYIafYVd7IEROeg+fKg4dCAnNphVjYnE4UTXLHhsjeSJZpi2rBgPpQIh3BQTFnn4Lwqeg
+EFHujBvOcG6C5/rqjA3/63/P4zCL/qnvdpsL/7v5u2V8p6PrguOWU7noYmeBn8L4IaEFOr53ko3a
+kyQ+XmvtrYgr7A6EKfksUuNXTvIAW7ud/ln/S+9z/yzvNTKOPp4MhDgLRoG/VMJYxpEfLheQgnGY
+pFEcQsMmXjDP67Ec8p5gSpFfkKyVQ5VlTqjFyKjeQICh688gt8Rfjl73VOBIeid7qo1nsaJJNjNf
+4R+v5U65Q+2E1y6H+d0jfo/jcJYRwjnY4Ta4FQDERI8ZW/lZr7+yL7ZwL1WFDrPvEVtOPMdpuTgQ
+qk7iKyApGmVNAF19582zmI5azUtS2Kko1WAwFVrOtD84LQn1xmtWroRUIrVuZOvmm+EIw8gPXG+1
+xNK+VQ1RjoO+W7yeQ1weba82s4FYd8MF5SPcZIJPKUiKFLUJLQ+8EsJQOeTe8ypwu6xuqUJ+X9rE
+lknfDmsHSj5cQPV6U8/30uX6dla/ITQgdPrNdp2A8Yj9MCID0IAY6A4M7AzVYLpOEOAZDEkUgAoM
+xSSfig+EXPLdFEAcQKtD9QCQC8cL8hY4502nThG3PXt7dC/JgOzF43UrskUjDFO2klJYqDu8VjrZ
+wLMCqhKU7Pr2RuaioHJuflsWX81ZvNvxqcC7lR7KcjujLuXHwMlBGaLjeqW8maMKq7+d2fdEso76
+Rhpu9WE5Zl47FltdxtNsXoq7yi6L2sRpyloPnmPwCtG+i7embSLRkC7tiYkMeyxalybI9REhySNJ
+E/ULG+niUEP2FdyQNUSkt8jcFo+GXyUbLBXk5ndVsexrZJjqSCevuWabrluicYEsJNsyulYlZCvi
+lardkvbrnHbrdIs6vhzpaAT3cTTWRrdXSLfsXI08HM9yQy+rcU/zwKidx04kb2zk/lLaLpCODNFC
+tqoro7GmmpatqBoqxL0WfEO3tqQMs2DmY9lLIt9ZMgaqMwoSKAfVK/Q0U1wziOSkeB7Gy/84J8qm
+ICIc88llomaWkvkMVJhbY08aezjRZcBHlSGHqqIiA/QJZeFnZ0FIy88diYgfJUVdvCJR1Y8/5pmn
+Cye5cWliGAQT2PsVSUWQu4dC/7uA7xUbxsA+Jj35p2VYJnbnrl9oml9M3Z+22dk2vf+1bYrgM/La
+R0hF6tq+Pb6aueghkMjiKT6xcBfGxatUucq2Dqy6xlLi5p19yrve9ug74s7J/LRkTU2uvcSb+jhn
++aot+tvIZ1/opVfBO8ff5cbff8f4V6W0u0BIpmK4cI/yh8q58KZXzaD2UvsJUEsDBBQAAAAIAPIa
+KV0J3cstTAIAAFIHAABJAAAATGljZW5zZVBhbmVsQXBwLnhjb2RlcHJvai94Y3NoYXJlZGRhdGEv
+eGNzY2hlbWVzL0xpY2Vuc2VQYW5lbEFwcC54Y3NjaGVtZd1VTY/aMBC98yss3wvspa0qYAULSEh0
+QXxs26NJhuDWsSN/UNhf34mdhPAhyrXlFL+xn2fG7w2d50MqyB604Up26VOzTQnISMVcJl26Xo0/
+fKbPvUZnGe0gBTJlxq6zRLMY3qozH9t4qEbxifYahHQGjou4H1lEScY0EwIEfwcPs40A06U/RktK
+NjkwSTPBI26HkIGMMQNexnOuc7aRtBrDIXAdOgbGsdIrMNbXcboH0YWT8hqda7Xl4hrv62jH9zdw
+ycTxvcLLZMp08gIXsAWNpQCpoAmWZvmWg+7STPOU6SMlA+EAF9LWo6NR+9bviZ7IXlkKXTrlEUgD
+cyZB9LOsybKsRnlzDyVVavGLkpZxmV8ZlZ9fLjkPKAjkUz9pq+p667LtxUNd4sVLneEeyF+nkIdv
+Kmay5YnTzHodDWHjEkoMCIgsxH6ZgK736HueVrOMjJWTsT9cQc3pdDgoFyeuKXMS9fwYV7nZc5UL
+5NopJ+K1gQAFf/R1YkZyHyThW9UJ4X+3ThHKs0eBOkKfOwMvzliVflP6F8p/yDXepfSxS19nlPBE
+Kg1mnk8DY/HapWUWZjIQhj1xfvlQRS7FeDFGTgbz0SXoPWpwdECKMFZQy6DRc5TgIFG/pyryaS95
+6kTRyctpkXsEbR27yOaez5dEFx+hAXjrV2xHXtj5NPnP7VuY8UaDglXrovVImI5wR8YL1Bwz8Igx
+iGF7iFdKiXrH/iqtu7IJZgtD+V6awW3Fbj/aHypKwx6YKA5M5EwnTOJ/ma4u77RCob3GH1BLAwQU
+AAAACADyGildmgsgx4kAAADBAAAAKAAAAExpY2Vuc2VQYW5lbEFwcC9MaWNlbnNlUGFuZWxBcHBB
+cHAuc3dpZnRVisEKwjAQRO/5ij3WSz+gJ6UHETwIRT3HZIvBZjdsUoNI/90EBfUxzGHmOR9YEgzZ
+jem4U2rttSMVk8wmwd4ZpIgHTThtQijpoBQ8FRTuWuDC9tFBZI8wFBc/V+XsyHLeCs/hZ630TAkp
+nRzmZvX3VNogOKII2p4nlsFc0WPTWi23r7yody/qBVBLAwQUAAAACADyGildNf5S78kKAAA4LAAA
+IQAAAExpY2Vuc2VQYW5lbEFwcC9Db250ZW50Vmlldy5zd2lmdM0aXXPbuPHdvwLV5IGakxnZiZ1E
+01zOke1Yc7Hlk+x02l7nBiIhiTUJsCBlW2nz37sLghRIgpTspDPFQyKTi93Ffu8SQRQLmZLpQzBP
+b0d7e0kqV15KhoKnjKdfAvYwIPgv+fcegfXLNKUpG8/+yQAolsE9/EXuqSRh4DGeMPKefM5+TVMh
+mdPdU9sQYib89YAkImImQlyfpFjFxt+4gnmO0g2Sk1W6BG4CD6j5FUBclzTgN3SGaIFi9S0ul/H7
+QAoeAZqMe0ejL8N/IyyEU9RJGCwEgv8ISnvlX9/2vu3tzQNOQ+KFNElKchyQ8Sxh8p7Owlz4Wh/X
+q1kYJEsQC8q4Kqr3ZE7hPHbQLzQMfDgOX7TBRSxJ6AIV2zkDm5CEwmPYSO7Y2u1k6n35koBdcJ+G
+grPCFFJxx7hLRinQIlykxBOcA+uAOBWE8jVZUDAGIbP/Yyk8oOUqjLlphSzNyP3K1sjCuWTsPJDs
+kj7un073j969en3Y76gtCMoe40Ai4JCGDPiRrreSEuThwkGZM5ciGpBT+DkUYPccXiTOmlE5IIf9
+w+MeicDslwPyrkd8CsZ6cNDt/ik74nzFvYwTRPQHnn4Ah5Ygva5hLhWpgjOx4p0hSQMolxaID0WQ
+ZgKSLBErCfJw3VzIuE6DJKapt/xtxVbMjcDsXZqsuXcyB804PqN+GHCwFpcLsE/yE+m7b7t1z0LV
+AetRBAwMl1RSoCkTJ+Cw82EZpAyoAO0T7l+xB8SYdMn79yRh4dwttFH3EfW+boIlIZRgDYloay9E
+7Lud3RyzishmpHa/M1hucAXTO4s4BpaRTBjKHsAHZMRTg6uIPjr9nt38DJv7OzxY/6NHNgbpdHvg
+FQNtwV18Tz58IP3uJjjo0FyPROUIfVaNP2Z8HpTCihHSS8H8rtXZdojofwOc3l1FW0MRCunOQnjj
+BgsO9JMpnbMTyWieJ/L1Re130AyVkA9fV60Y1xStVFb34hpFYA1Osk5SFl1BcBmQTiiAbLIMWOi7
+8yAMOw3hew4hwHGzrU4SfIW9R2+7jcCSLSB7cX+arkPmuN6acgs/N+wxdTplzZEJ+9cKpOs/gZNX
+YFsPLFgsU/BUIL0KqdyZN+XZTczlyVZ70u4sHbzZmYGFpOsG+ueoF6eIAmCAHfAHeDEgL+CPBgoI
+MOLxKgXJCo/GQQp+/FVJ13E5u2eyYSNFeAGu6SEsRFVMrH5TRo+p74MZOgfHDQAzMNbspE5m5ErU
+rkDzTddO3+2/OmqSkgAuQ7p2rG9xTRAv8yfAK+ULkCMwzpmcUD9YJSD/QzviggCEDUjEDYwdvIW4
+gxH+L4GPme/AjuyJJmYFzqXoLoUMvoIh0bBHXr21GMTHVZqCf9QdHlduqEUutprHNxLSGQsHDUgu
+bPHJXEVoaQLIPPqzWEACaHDgfNm85tB05IRFwUyEfoOJbOXn2xaBg4Vh0AFxg7p3tGAMZIadHDfa
+rxcG8XRJY+ZsM9Tjp0Uqg7ot/tYP3WxhNUg/9/hNj7EpASwWWepGjGLBbkDXUiwguSUtXYLiAlCk
+eVSsH6853VVfZLZoqcAjyiGWy/YEMxciheq8OeRbo7gVtlDATIAHRyD8/g5Nj65rjCauVNC0Vxp6
+R0UTnyDnN0jfTelsBI7YoLvPGDaczgWQggyU+ayqJqCEwDYFehiIp2HIZFMVUdEchIjv4gT21xiB
+CjfCTnE79SlL0VCbTHE3FnIkdYFA65Sg71sZqf/SFp8VSdmrjf5znT2/mt3BXK7ofbBQBYItA0w9
+VK3FnnDpmhScf6HYgcAdQsMFggGx5IUqBLkGWWonvTm5uZ22JAztlFDMIJOtcDv7pYK3BsfXfUuw
+w3VNOQtb8uNFpUBvPne+LCW5t2TeXUQl1OWMhm1VeeXkKKE0SEO2pfbR4DVBMWYr0s21k7KtTUl1
+6dIfCs17m5tsO+ErFysDp6U0KBPKK+gE8g82GUFCqKLt7k78SYaFy16A5GtrLWXfbsmAuPQxR8Oz
+q+nZ/5Ujbd+RirhHbBUvrm0uN+JzMREPjjIL8B5s21cYk6ESXuEDVZe0SOQ0uA/8VkVUSZzhMIIZ
+NLDgzoZeReWkBxY/kuwpXSdE5iMW44S/F1RLQ5huw6HrdtVWNCrlHL5uKlgUcK1MVtOM8haXFznm
+Bg+ki4kNUL300TXCE8qe/3kea4xtmf/9ouOMMtrtXqh7H3epJ5Q94rME6APtSHChxo1N7U+tus1D
+3GVW3ZL/kC9MYrADtt0+cQ6a7MHCEEr46czUhpUkWXk4vJ6vwnDdFmm/k7xGYU9oVUCLsc8lZF4n
+oo+63XcDPgcXSoEJiz1Y6sXcWw4tmbfmHY5k/oD03f7RUY8oJtVfxz0yU/4Mv99ZDvqdLeWGx8bm
+w8rtbr6M5bjVlYvxbBzn9bL2oAQCdeCp7xMhXXFvOebjmHGcsCYa0jVfdKq7Npzmraco77YB1LAs
+IQqPOIhSSD8bdG8QVN7V9noiArNML4XPSvuM57U9yVI8ZDmqtGXzuLZDsjlkm+UEx9DmFuN5x4ia
+Zm9TbhpQB9ARYMFpqKMk5G7562VZL8UXiyZMNoGXMTbobCvmiibKSOsqND7bNSA0VFRGVtbpdkQb
+xZXxlPS8HY2hzDKesvZfH7n972/ozoW09bbTbO7rdH67HQ1/JSfDm9H4CrqyhpSXzSMdyKn4aQ2i
+tbI/qKnb6v+XL8ntaF/wcE08iKd8FatCXHDXXqu0Dyxx6W58iNjIbVzrxh9VK+UFEui1NVMNhXXr
+1LV6Iix7wQV/0IkybLUDxZACZBxCidF+nB0OWGj888nt1fCCjK/bVX4jFgsV7lVgICAXFZl70E+N
+IYu9KIWSVgwfi0BAjOBcILJGkied6HQ0vf588tetR7mA4EECjsUhZGLw2vTlJuAX/FTjTyvKYRZC
+iIr/BQoz4rRun0LkIEUbo3cbYeZJYrg+m5yPJ5cnV8OzRlE0l75tnpzVfJMsPBGJWahlUB+qZkd3
+LC+MoAYnxAr1yHXd4z6Yesrixu8tG7K/OyMoGM2g2SUXX/E78/avDpUyMcHhpU9lQ3P7ND8a3k4m
+Z1c3ZDi+Oh99up2coD81Cl45OvP1raLcrTadXSn/fiAdQEUgAIzPzxtOWUVoeNm96WUavzUbP4dO
+7kTS8BxNo5qcn4M+d6gocyiN2czUz8Gq/CypjAuMtP0cnNodSs25zVK3j6hxFWZ18nF8e7OzGem+
+z2ACGsBdLWYVhL6x83DnfdwPDeV0QDsue6RRDFlXjyfilq64ppxVjDfwmMlLMJ6Sgzc/PUl27WPn
+vCOhkpGE3kPHGgqPQrNKHoJ0STa1mrqHBBrEgbpPHpbgj+kSnsYxjhIlE+ChzHfJzRIni9nTZNOb
+425fsNJ9L7ztJSTadDDP7nwlvdKVL/w7vwUWsUjIXVro9s9WGnD3CFiOfpVWMVHzFK2yTahxsFr3
+qwXAMxvL4iNL26BIjVv+rBnJep6fy60P/lamzaTu3DSs3rRDSe0ZkAW/xR2It9tOW7v78Kb67fgJ
+DX71y699+npouSalh4ol6aBA9JAxm2IWT7Xn6ac7CMl6g0A5myJQ5to6AVfAim532wzavCGK9xCN
+Mewf6o/sDlmX7P+sj2AceA7dFL7FXoimacHHXF1Ky55iu72GtX95ue/7WWMuWbqSHMCSjFJ2Vw33
+dIGR/wJQSwMEFAAAAAgA8hopXZzrfU4pAAAAJwAAAC0AAABMaWNlbnNlUGFuZWxBcHAvQXNzZXRz
+LnhjYXNzZXRzL0NvbnRlbnRzLmpzb26rVsrMS8tXsqpWSiwtycgvUrJSqkjOT0lV0lEqSy0qzszP
+U7IyrK0FAFBLAwQUAAAACADyGildU5LlTQIHAABhFQAAGgAAAC5naXRodWIvd29ya2Zsb3dzL21h
+aW4ueW1srVhbc9tEFH7PrziIMIZOZSWh7TDGDTi20og6tsaXQinFo0jraGvdRrtK4jb9NQwPneGR
+GWbKAw/9Jf0nnJVkeSXLxQWeEu2e+/nOZR1YPmnBSUI9B+hwDIbZ2dsLg9YewHUYL+ZeeD1zKIss
+brviMEpY+hfgIrYC2yWsBc98iwbP9/ZehBdM3F0IaRlRnARMRXHgW3bI1MP76SnjJGIZAYAKQWpD
+1yX2Ikx4fgyQMCHcsjkNA6bZ+fW3V/f3Kpz90LY4AStwIAkiy17AD3boEIji8AWx1wKZSzyvBRcW
+c4szNLAFt8UnEhEOKkluQohoROYW9aTL74ejxw+V/UfG5Gx6MhNfY7PT1RWJ5GRq9HtIM5oOBvpo
+NtHPTS0NyIyFSWwTmTb2QY3noOynTPKNv3BoDGq0vpMuPwVjjt6WvQTKwPJiYjlLPCKMBPyuCCFQ
+3pR4zdHwO707ebj/+ZxivJR94YQCKl9GBBxQRUShcad5I2QL0Q08CzEkiAAXL0q+aHcacAsu6kQi
+OITbW+BxQr4oGzvkLomvKZqSZwe/YU5jxgvbfzRMmIcJGkSD9DomUcgoD+OlbDydwzNQX6LVuRsK
+PP9a0AcSEQhps1Ojr9c7OQeVrrx8SaOqf81Lyrf6JWtZG7PSV28NALHdEBr6aDQcteCx++734BL4
+u998pH3/9tclrIMNbvj+7R82RscjIKwD233/5xtrFahmo1b0KZIzNDFEwSJyrSpZOQy+dYPq0N17
+6HZMA144e3RwUFVwQzkc7pWFlT5TE5Qpo6gcI9GCdTxKdEkg/FHDUsBUpw79NTDNaD6I03/IGJr9
+8VD6iNQxK4GFS+GSvn/7C4Xg3Zugkq6KK0Uavqqm4ctKGjaSUPYl92DWM0YYMGwcaXDWnslRyLJV
+hLdw/vgYir6mD54o21gyJdLHDqynorIRFytlEkEavrSlgOpRJuowbwlr86vt3vCjMOZgk5jTOS1a
+PzJeUYazQgARP0QNFZpIcNWSI3Z4NDvpjPUH99CsV6+w6dsx4ay5PofXryv0Zmc8xgLqbXKsbio8
+o+ETY2wMBzP8T6C9XuMWKlnWx8yt2rElgb1wEPEuqkQ6X7lRudli4A71MnGxFP5K4BHlZ8kFjDOX
+W1L075Yie3drzBofUw5dfTRBmZOzyhQWgGlGh0dKOUmpmhryHEJNP7zAPwW6ZO7H+tPuWccY1LGn
+oG4uyNJ2cTtSnYvSCE/rfQ6Nz1ijkpVbkWeCAFBVh6QDXpRX4ZOyXcjWRNWLlF0v2YbQTGLKl4Dp
+wuJSVz6IdcSmyFlyW6njRDAWbCp+cKxJhhWecDg6fHBwsJOQJPBCe/Fv1NOsQ8hhA9XcgLnawXmS
+9hFQ5xAtbHZ4BOpiJxWiWUmmOWLVwoWN7cTsYIEmnsxfw1eDUtF7lf2z4bmu9Snu3/FSO0/R2SNX
+FNcxU26BZoZftmWtlGTKFHZUhUaZVqs1zOwb48mW+olEqGrDYPuIiR6uYxsqS/gUsutqdtA5Fyue
+lrBY8+gFuSG2ZgplJ4mDS7BqQ8MUFdIa4NhobEiUp+JE75zPjN5O0ibE8g0H12scPiRuHXxY8sl0
+0MOLHWXrKJV7xEfprGVFGDocb5hPlRYKN9VhfTPiQINpPz/7ufn8zk9NTWuUdvBigktxk792mOFF
+hPJ/dmCRXC/+3WXRyHCT7QtrEzctwjwg0cqeTfW4dOAWbYiBvdZfXSayl68V2y69Wq8L/3niSnvN
+T6XZVbPfVCkYPnVxf+tjRQeMmFZAvE4UbVA5C6CRGwYkZNU7Owzm9DKJU+zAiHgE+3+VKPfZFO+e
+cuVWNOOOm9NWTc2PK6fdYU+fjY1Hg9l48hRfYedWkFhehainP9H7Q/NcH0xmIoXYPApklSkxTL0p
+7ppFDpHFODV00QolXG0wZcPQGDwq5uHY1LsrzjK2KqDQb9L5IX4LKZL9XxGBhZy2NTnQmZ5hlP7C
+kTdKaLfTspZY29/c+B5ckVi09ofKYfNAwYUWEYZt/qEynZyqXynfHMsMn/SG3clTU4dUJpjTk77R
+BUXVNMynRzStN+lBqgZQmqbpA2zzLudRS9Our6+bovWQph36gpCJuRLhlFz2xdBDhqbDHaWkMNNT
+MvG47VCbH5fS0saJd+wT7oZOWxP/txnHxnd5bDmqG9ptLf/cZGL0Uky1MV96pMzqp/D6ACsXDbtX
+ZlqB7QNs8ntiNUtzIZuO5TxrQFbUyXDbolOrSs1P2loaXPkmA8iWZxRJQdWpLc3/o+hzBTlq0zG2
+C6xrhdTYkV1slOQ08kJ8GsslWf59MEkJ0EEck3j27dW9gvCacld+/eW/GpYdVmXRuFujZdlLDas8
+IHGTEz/CR1lun3anSSOr9MRSg1BNQaLOs/cuieMw3vsbUEsBAhQDFAAAAAgA8hopXZQ89MzJAgAA
+3AQAAAkAAAAAAAAAAAAAAKSBAAAAAFJFQURNRS5tZFBLAQIUAxQAAAAIAPIaKV2EdTp8YgEAAAoC
+AAAWAAAAAAAAAAAAAACkgfACAABHSVRIVUJfQlVJTERfUkVBRE1FLm1kUEsBAhQDFAAAAAgA8hop
+Xfn0zITOAAAA7QAAAA8AAAAAAAAAAAAAAKSBhgQAAFVQTE9BRF9OT1RFLnR4dFBLAQIUAxQAAAAI
+APIaKV2Jog7yFQUAAF0WAAApAAAAAAAAAAAAAACkgYEFAABMaWNlbnNlUGFuZWxBcHAueGNvZGVw
+cm9qL3Byb2plY3QucGJ4cHJvalBLAQIUAxQAAAAIAPIaKV0J3cstTAIAAFIHAABJAAAAAAAAAAAA
+AACkgd0KAABMaWNlbnNlUGFuZWxBcHAueGNvZGVwcm9qL3hjc2hhcmVkZGF0YS94Y3NjaGVtZXMv
+TGljZW5zZVBhbmVsQXBwLnhjc2NoZW1lUEsBAhQDFAAAAAgA8hopXZoLIMeJAAAAwQAAACgAAAAA
+AAAAAAAAAKSBkA0AAExpY2Vuc2VQYW5lbEFwcC9MaWNlbnNlUGFuZWxBcHBBcHAuc3dpZnRQSwEC
+FAMUAAAACADyGildNf5S78kKAAA4LAAAIQAAAAAAAAAAAAAApIFfDgAATGljZW5zZVBhbmVsQXBw
+L0NvbnRlbnRWaWV3LnN3aWZ0UEsBAhQDFAAAAAgA8hopXZzrfU4pAAAAJwAAAC0AAAAAAAAAAAAA
+AKSBZxkAAExpY2Vuc2VQYW5lbEFwcC9Bc3NldHMueGNhc3NldHMvQ29udGVudHMuanNvblBLAQIU
+AxQAAAAIAPIaKV1TkuVNAgcAAGEVAAAaAAAAAAAAAAAAAACkgdsZAAAuZ2l0aHViL3dvcmtmbG93
+cy9tYWluLnltbFBLBQYAAAAACQAJAM4CAAAVIQAAAAA=
+BASE64
+          base64 --decode < "$RUNNER_TEMP/project.b64" > "$PAYLOAD"
+          unzip -q "$PAYLOAD" -d "$RUNNER_TEMP/source"
+          PROJECT=$(find "$RUNNER_TEMP/source" -type d -name '*.xcodeproj' | head -n 1)
+          if [ -z "$PROJECT" ]; then echo "Xcode project was not created"; exit 1; fi
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          xcodebuild -list -project "$PROJECT"
 
-      - name: Import certificate and provisioning profile
-        shell: bash
+      - name: Import signing certificate and profile
         env:
           P12_BASE64: ${{ secrets.P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           PROVISION_PROFILE_BASE64: ${{ secrets.PROVISION_PROFILE_BASE64 }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${P12_BASE64:-}" ] || [ -z "${P12_PASSWORD:-}" ] || [ -z "${PROVISION_PROFILE_BASE64:-}" ]; then
-            echo "THIẾU SECRETS. Cần: P12_BASE64, P12_PASSWORD, PROVISION_PROFILE_BASE64"
-            exit 1
-          fi
-
-          CERT_PATH="$RUNNER_TEMP/signing.p12"
-          PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-          PROFILE_PLIST="$RUNNER_TEMP/profile.plist"
-
-          echo "$P12_BASE64" | base64 --decode > "$CERT_PATH"
-          echo "$PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
-
-          security create-keychain -p "ci-keychain" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "ci-keychain" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-
-          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
-          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print:Name' "$PROFILE_PLIST")
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print:UUID' "$PROFILE_PLIST")
-          TEAM_ID=$(/usr/libexec/PlistBuddy -c 'Print:TeamIdentifier:0' "$PROFILE_PLIST")
-          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print:Entitlements:application-identifier' "$PROFILE_PLIST")
-          BUNDLE_ID="${APP_ID#*.}"
-
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
-
-          SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F '"' '/"/ {print $2; exit}')"
-          if [ -z "$SIGNING_IDENTITY" ]; then
-            echo "Không tìm thấy signing identity trong P12."
-            exit 1
-          fi
-
-          {
-            echo "PROFILE_NAME=$PROFILE_NAME"
-            echo "PROFILE_UUID=$PROFILE_UUID"
-            echo "TEAM_ID=$TEAM_ID"
-            echo "BUNDLE_ID=$BUNDLE_ID"
-            echo "SIGNING_IDENTITY=$SIGNING_IDENTITY"
-          } >> "$GITHUB_ENV"
-
-          echo "Profile: $PROFILE_NAME"
-          echo "Team: $TEAM_ID"
-          echo "Bundle ID: $BUNDLE_ID"
-          echo "Signing identity: $SIGNING_IDENTITY"
-
-      - name: Build archive
         shell: bash
         run: |
           set -euo pipefail
-          PROJECT="${{ steps.project.outputs.project }}"
-          ARCHIVE_PATH="$RUNNER_TEMP/LicensePanelApp.xcarchive"
+          for v in P12_BASE64 P12_PASSWORD PROVISION_PROFILE_BASE64; do
+            if [ -z "${!v:-}" ]; then
+              echo "Missing GitHub Secret: $v"
+              exit 1
+            fi
+          done
+          CERT="$RUNNER_TEMP/signing.p12"
+          PROFILE="$RUNNER_TEMP/profile.mobileprovision"
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$CERT"
+          printf '%s' "$PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE"
+          security create-keychain -p ci "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p ci "$KEYCHAIN"
+          security import "$CERT" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision"
+          security cms -D -i "$PROFILE" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print:Name' "$RUNNER_TEMP/profile.plist")
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c 'Print:TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print:Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist" | sed 's/^[^.]*\.//')
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F'"' '/"/ {print $2; exit}')
+          if [ -z "$SIGNING_IDENTITY" ]; then echo "No code-signing identity found in P12"; security find-identity -v -p codesigning "$KEYCHAIN"; exit 1; fi
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+          echo "BUNDLE_ID=$BUNDLE_ID" >> "$GITHUB_ENV"
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "Signing identity: $SIGNING_IDENTITY"
+          echo "Team: $TEAM_ID"
+          echo "Bundle ID from profile: $BUNDLE_ID"
 
+      - name: Archive
+        shell: bash
+        run: |
+          set -euo pipefail
           xcodebuild \
             -project "$PROJECT" \
             -scheme LicensePanelApp \
-            -configuration Release \
             -sdk iphoneos \
-            -archivePath "$ARCHIVE_PATH" \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/LicensePanelApp.xcarchive" \
             archive \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            CODE_SIGNING_ALLOWED=YES
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
 
       - name: Export IPA
         shell: bash
         run: |
           set -euo pipefail
-          EXPORT_DIR="$RUNNER_TEMP/export"
-          ARCHIVE_PATH="$RUNNER_TEMP/LicensePanelApp.xcarchive"
-          EXPORT_PLIST="$RUNNER_TEMP/ExportOptions.plist"
-
-          rm -rf "$EXPORT_DIR"
-          mkdir -p "$EXPORT_DIR"
-
-          cat > "$EXPORT_PLIST" <<EOF
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
-          <key>method</key><string>ad-hoc</string>
-          <key>signingStyle</key><string>manual</string>
-          <key>teamID</key><string>${TEAM_ID}</string>
-          <key>provisioningProfiles</key><dict>
-          <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
-          </dict>
+            <key>method</key><string>ad-hoc</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>$SIGNING_IDENTITY</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>provisioningProfiles</key><dict>
+              <key>$BUNDLE_ID</key><string>$PROFILE_NAME</string>
+            </dict>
           </dict></plist>
-          EOF
-
-          xcodebuild \
-            -exportArchive \
-            -archivePath "$ARCHIVE_PATH" \
-            -exportOptionsPlist "$EXPORT_PLIST" \
-            -exportPath "$EXPORT_DIR"
-
-          IPA="$(find "$EXPORT_DIR" -type f -name '*.ipa' | head -n 1 || true)"
-          if [ -z "$IPA" ]; then
-            echo "Không tạo được IPA."
-            find "$EXPORT_DIR" -maxdepth 3 -type f -print
-            exit 1
-          fi
-          echo "IPA created: $IPA"
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/LicensePanelApp.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
@@ -150,4 +278,3 @@ jobs:
           name: LicensePanelApp-IPA
           path: ${{ runner.temp }}/export/*.ipa
           if-no-files-found: error
-          retention-days: 7
