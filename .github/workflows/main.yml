@@ -2,8 +2,6 @@ name: Build iOS IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -15,12 +13,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Create Xcode project
+      - name: Prepare Xcode project
         shell: bash
         run: |
           set -euo pipefail
-          PAYLOAD="$RUNNER_TEMP/project.zip"
-          mkdir -p "$RUNNER_TEMP/source"
+          mkdir -p "$RUNNER_TEMP/project"
           cat > "$RUNNER_TEMP/project.b64" <<'BASE64'
 UEsDBBQAAAAIAPIaKV2UPPTMyQIAANwEAAAJAAAAUkVBRE1FLm1kZVRdb9NAEHz3r1ipEi8kDv0A
 BEiI0hIR0TaVQit48+W8cY6e76y7cxLz65m1k7aoD1F83r3dmdlZH9GV0ewi061ybMnMF1m2SMqV
@@ -185,70 +182,69 @@ AKSBZxkAAExpY2Vuc2VQYW5lbEFwcC9Bc3NldHMueGNhc3NldHMvQ29udGVudHMuanNvblBLAQIU
 AxQAAAAIAPIaKV1TkuVNAgcAAGEVAAAaAAAAAAAAAAAAAACkgdsZAAAuZ2l0aHViL3dvcmtmbG93
 cy9tYWluLnltbFBLBQYAAAAACQAJAM4CAAAVIQAAAAA=
 BASE64
-          base64 --decode < "$RUNNER_TEMP/project.b64" > "$PAYLOAD"
-          unzip -q "$PAYLOAD" -d "$RUNNER_TEMP/source"
-          PROJECT=$(find "$RUNNER_TEMP/source" -type d -name '*.xcodeproj' | head -n 1)
-          if [ -z "$PROJECT" ]; then echo "Xcode project was not created"; exit 1; fi
+          base64 -D -i "$RUNNER_TEMP/project.b64" -o "$RUNNER_TEMP/project.zip"
+          unzip -q "$RUNNER_TEMP/project.zip" -d "$RUNNER_TEMP/project"
+          PROJECT="$RUNNER_TEMP/project/LicensePanelApp.xcodeproj"
+          test -d "$PROJECT" || { echo "ERROR: Xcode project was not created"; exit 1; }
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          xcodebuild -list -project "$PROJECT"
+          echo "Project ready: $PROJECT"
 
-      - name: Import signing certificate and profile
+      - name: Check signing secrets
+        shell: bash
         env:
           P12_BASE64: ${{ secrets.P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           PROVISION_PROFILE_BASE64: ${{ secrets.PROVISION_PROFILE_BASE64 }}
-        shell: bash
         run: |
           set -euo pipefail
-          for v in P12_BASE64 P12_PASSWORD PROVISION_PROFILE_BASE64; do
-            if [ -z "${!v:-}" ]; then
-              echo "Missing GitHub Secret: $v"
-              exit 1
-            fi
-          done
+          test -n "$P12_BASE64" || { echo "Missing secret: P12_BASE64"; exit 1; }
+          test -n "$P12_PASSWORD" || { echo "Missing secret: P12_PASSWORD"; exit 1; }
+          test -n "$PROVISION_PROFILE_BASE64" || { echo "Missing secret: PROVISION_PROFILE_BASE64"; exit 1; }
+          echo "All signing secrets are present."
+
+      - name: Import certificate and provisioning profile
+        shell: bash
+        env:
+          P12_BASE64: ${{ secrets.P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          PROVISION_PROFILE_BASE64: ${{ secrets.PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
           CERT="$RUNNER_TEMP/signing.p12"
           PROFILE="$RUNNER_TEMP/profile.mobileprovision"
           KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
-          printf '%s' "$P12_BASE64" | base64 --decode > "$CERT"
-          printf '%s' "$PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE"
+          echo "$P12_BASE64" | base64 -D -o "$CERT"
+          echo "$PROVISION_PROFILE_BASE64" | base64 -D -o "$PROFILE"
           security create-keychain -p ci "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p ci "$KEYCHAIN"
           security import "$CERT" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
           security list-keychain -d user -s "$KEYCHAIN"
-          security default-keychain -s "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KEYCHAIN" || true
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision"
+
           security cms -D -i "$PROFILE" > "$RUNNER_TEMP/profile.plist"
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print:Name' "$RUNNER_TEMP/profile.plist")
           TEAM_ID=$(/usr/libexec/PlistBuddy -c 'Print:TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
-          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print:Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist" | sed 's/^[^.]*\.//')
-          SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F'"' '/"/ {print $2; exit}')
-          if [ -z "$SIGNING_IDENTITY" ]; then echo "No code-signing identity found in P12"; security find-identity -v -p codesigning "$KEYCHAIN"; exit 1; fi
+          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print:Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")
+          BUNDLE_ID="${APP_ID#*.}"
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(.*\)".*/\1/p' | head -n 1)
+          test -n "$SIGNING_IDENTITY" || { echo "No signing identity found in P12"; exit 1; }
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
           echo "TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
           echo "BUNDLE_ID=$BUNDLE_ID" >> "$GITHUB_ENV"
           echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
-          echo "Signing identity: $SIGNING_IDENTITY"
+          echo "Profile: $PROFILE_NAME"
           echo "Team: $TEAM_ID"
-          echo "Bundle ID from profile: $BUNDLE_ID"
+          echo "Bundle ID: $BUNDLE_ID"
+          echo "Certificate: $SIGNING_IDENTITY"
 
       - name: Archive
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild \
-            -project "$PROJECT" \
-            -scheme LicensePanelApp \
-            -sdk iphoneos \
-            -configuration Release \
-            -archivePath "$RUNNER_TEMP/LicensePanelApp.xcarchive" \
-            archive \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+          xcodebuild             -project "$PROJECT"             -scheme LicensePanelApp             -sdk iphoneos             -configuration Release             -archivePath "$RUNNER_TEMP/LicensePanelApp.xcarchive"             archive             CODE_SIGN_STYLE=Manual             CODE_SIGN_IDENTITY="$SIGNING_IDENTITY"             DEVELOPMENT_TEAM="$TEAM_ID"             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
 
       - name: Export IPA
         shell: bash
@@ -267,10 +263,7 @@ BASE64
             </dict>
           </dict></plist>
           PLIST
-          xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/LicensePanelApp.xcarchive" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -exportPath "$RUNNER_TEMP/export"
+          xcodebuild -exportArchive             -archivePath "$RUNNER_TEMP/LicensePanelApp.xcarchive"             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"             -exportPath "$RUNNER_TEMP/export"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
